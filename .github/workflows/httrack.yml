@@ -1,0 +1,66 @@
+name: Build HTTrack AppImage
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        repository: xroche/httrack
+        submodules: recursive
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential autoconf libtool pkg-config zlib1g-dev
+
+    - name: Configure and build HTTrack
+      run: |
+        ./configure
+        make -j$(nproc)
+
+    - name: Prepare AppDir
+      run: |
+        mkdir -p AppDir/usr/bin
+        mkdir -p AppDir/usr/lib
+        cp httrack AppDir/usr/bin/
+        cp -r libhttrack/.libs/*.so* AppDir/usr/lib/
+
+    - name: Create AppImage builder recipe
+      run: |
+        cat << EOF > AppImageBuilder.yml
+        version: 1
+        script:
+          - cp -r AppDir $APPDIR
+        AppDir:
+          path: AppDir
+          app_info:
+            id: com.httrack.httrack
+            name: HTTrack
+            icon: httrack
+            version: ${{ github.sha }}
+            exec: usr/bin/httrack
+          runtime:
+            env:
+              LD_LIBRARY_PATH: $APPDIR/usr/lib
+        AppImage:
+          arch: x86_64
+        EOF
+
+    - name: Build AppImage
+      uses: AppImageCrafters/build-appimage@master
+      with:
+        recipe: AppImageBuilder.yml
+
+    - name: Upload AppImage
+      uses: actions/upload-artifact@v2
+      with:
+        name: HTTrack-x86_64.AppImage
+        path: HTTrack-x86_64.AppImage
