@@ -11,56 +11,68 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
-      with:
-        repository: xroche/httrack
-        submodules: recursive
+    - name: Checkout repository
+      uses: actions/checkout@v2
 
-    - name: Install dependencies
+    - name: Set up dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential autoconf libtool pkg-config zlib1g-dev
+        sudo apt-get install -y curl tar jq binutils
 
-    - name: Configure and build HTTrack
+    - name: Download deb2appimage
       run: |
-        ./configure
-        make -j$(nproc)
+        wget -c $(wget -q https://api.github.com/repos/simoniz0r/deb2appimage/releases -O - | grep "deb2appimage-.*-x86_64.AppImage" | grep browser_download_url | head -n 1 | cut -d '"' -f 4)
+        chmod +x ./deb2appimage-*.AppImage
 
-    - name: Prepare AppDir
+    - name: Create JSON configuration for HTTrack
       run: |
-        mkdir -p AppDir/usr/bin
-        mkdir -p AppDir/usr/lib
-        cp httrack AppDir/usr/bin/
-        cp -r libhttrack/.libs/*.so* AppDir/usr/lib/
-
-    - name: Create AppImage builder recipe
-      run: |
-        cat << EOF > AppImageBuilder.yml
-        version: 1
-        script:
-          - cp -r AppDir $APPDIR
-        AppDir:
-          path: AppDir
-          app_info:
-            id: com.httrack.httrack
-            name: HTTrack
-            icon: httrack
-            version: ${{ github.sha }}
-            exec: usr/bin/httrack
-          runtime:
-            env:
-              LD_LIBRARY_PATH: $APPDIR/usr/lib
-        AppImage:
-          arch: x86_64
+        mkdir -p ~/.cache/deb2appimage/debs
+        cat << EOF > httrack.json
+        {
+          "prerun": [
+            "curl -sL http://archive.ubuntu.com/ubuntu/pool/universe/h/httrack/webhttrack_3.49.2-1_amd64.deb -o ~/.cache/deb2appimage/debs/webhttrack.deb"
+          ],
+          "name": "HTTrack",
+          "version": "3.49.2",
+          "deps": "libssl1.1,libqt5core5a,libqt5gui5,libqt5widgets5",
+          "repoarch": "amd64",
+          "distrorepo": "Ubuntu",
+          "repoversion": "focal",
+          "binarypath": "/usr/bin/webhttrack",
+          "desktoppath": "/usr/share/applications/webhttrack.desktop",
+          "iconpath": "/usr/share/icons/hicolor/256x256/apps/webhttrack.png",
+          "usewrapper": "true",
+          "postrun": [
+            null
+          ],
+          "apprunconf": [
+            "setpath": "true",
+            "setlibpath": "true",
+            "setpythonpath": "false",
+            "setpythonhome": "false",
+            "setpythondontwritebytecode": "false",
+            "setxdgdatadirs": "false",
+            "setperllib": "false",
+            "setgsettingsschemadir": "false",
+            "setqtpluginpath": "false",
+            "exec": "/usr/bin/webhttrack.wrapper"
+          ],
+          "authors": [
+            {
+              "type": "Author",
+              "author": "HTTrack",
+              "url": "https://www.httrack.com/"
+            }
+          ]
+        }
         EOF
 
     - name: Build AppImage
-      uses: AppImageCrafters/build-appimage@master
-      with:
-        recipe: AppImageBuilder.yml
+      run: |
+        ./deb2appimage-*.AppImage -j httrack.json -o $GITHUB_WORKSPACE
 
     - name: Upload AppImage
       uses: actions/upload-artifact@v2
       with:
-        name: HTTrack-x86_64.AppImage
-        path: HTTrack-x86_64.AppImage
+        name: HTTrack.AppImage
+        path: $GITHUB_WORKSPACE/HTTrack-*.AppImage
